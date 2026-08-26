@@ -2,6 +2,7 @@
 Khám phá và Phân tích Dữ liệu Netflix (Exploratory Data Analysis - EDA)
 Sử dụng: Pandas, NumPy, Matplotlib, Seaborn, Scikit-learn
 Nhóm 8 - KADA
+Hỗ trợ cả 2 tệp: netflix_titles_cleaned.csv và netflix_titles.csv
 """
 
 import os
@@ -30,8 +31,12 @@ sns.set_palette("tab10")
 plt.rcParams['figure.figsize'] = (10, 6)
 plt.rcParams['font.sans-serif'] = 'Arial'
 
-# 1. ĐỌC DỮ LIỆU
-csv_path = os.path.join(os.path.dirname(__file__), "netflix_titles.csv")
+# 1. ĐỌC DỮ LIỆU (Tự động ưu tiên file đã làm sạch)
+base_dir = os.path.dirname(__file__)
+cleaned_path = os.path.join(base_dir, "netflix_titles_cleaned.csv")
+raw_path = os.path.join(base_dir, "netflix_titles.csv")
+csv_path = cleaned_path if os.path.exists(cleaned_path) else raw_path
+
 print("="*60)
 print(f"ĐANG TẢI DỮ LIỆU TỪ: {csv_path}")
 print("="*60)
@@ -48,34 +53,26 @@ for col in df.columns:
 
 print("\n--- 2. KIỂM TRA GIÁ TRỊ THIẾU (NULL VALUES) ---")
 missing = df.isnull().sum()
-missing_percent = (missing / len(df)) * 100
-missing_df = pd.DataFrame({'Missing Count': missing, 'Missing %': missing_percent})
-print(missing_df[missing_df['Missing Count'] > 0])
+if (missing > 0).any():
+    missing_percent = (missing / len(df)) * 100
+    missing_df = pd.DataFrame({'Missing Count': missing, 'Missing %': missing_percent})
+    print(missing_df[missing_df['Missing Count'] > 0])
+else:
+    print("Dữ liệu hoàn toàn sạch, không có giá trị thiếu (0 missing values).")
 
-# 3. TIỀN XỬ LÝ DỮ LIỆU (DATA CLEANING)
-print("\n--- 3. TIỀN XỬ LÝ DỮ LIỆU ---")
+# 3. CHUẨN HÓA CÁC TRƯỜNG DỮ LIỆU
 df_clean = df.copy()
-
-# Điền giá trị thiếu
-df_clean['director'] = df_clean['director'].fillna('Không rõ')
-df_clean['cast'] = df_clean['cast'].fillna('Không rõ')
-df_clean['country'] = df_clean['country'].fillna('Không rõ')
-df_clean['rating'] = df_clean['rating'].fillna(df_clean['rating'].mode()[0])
-
-# Xử lý ngày tháng date_added
-df_clean['date_added'] = df_clean['date_added'].str.strip()
-df_clean['date_added'] = pd.to_datetime(df_clean['date_added'], format='%B %d, %Y', errors='coerce')
-df_clean['year_added'] = df_clean['date_added'].dt.year
-df_clean['month_added'] = df_clean['date_added'].dt.month_name()
-
-# Tách thời lượng (duration)
-df_clean['duration_num'] = df_clean['duration'].str.extract('(\\d+)').astype(float)
-df_clean['duration_unit'] = df_clean['duration'].str.extract('([a-zA-Z]+)')
-
-print("Tiền xử lý hoàn tất! Cột mới: year_added, month_added, duration_num")
+if 'duration_int' not in df_clean.columns:
+    df_clean['duration_int'] = df_clean['duration'].astype(str).str.extract('(\\d+)').astype(float).fillna(0).astype(int)
+if 'primary_country' not in df_clean.columns:
+    df_clean['country'] = df_clean['country'].fillna('Unknown')
+    df_clean['primary_country'] = df_clean['country'].apply(lambda x: x.split(',')[0].strip())
+if 'year_added' not in df_clean.columns:
+    df_clean['date_added'] = pd.to_datetime(df_clean['date_added'].astype(str).str.strip(), format='%B %d, %Y', errors='coerce')
+    df_clean['year_added'] = df_clean['date_added'].dt.year.fillna(df_clean['release_year']).astype(int)
 
 # 4. TRỰC QUAN HÓA & PHÂN TÍCH (VISUALIZATION)
-output_dir = os.path.join(os.path.dirname(__file__), "visualizations")
+output_dir = os.path.join(base_dir, "visualizations")
 os.makedirs(output_dir, exist_ok=True)
 
 # 4.1 Tỷ lệ Movies vs TV Shows
@@ -101,7 +98,7 @@ plt.close()
 
 # 4.3 Top 10 Quốc gia sản xuất nhiều nội dung nhất
 plt.figure(figsize=(12, 6))
-top_countries = df_clean[df_clean['country'] != 'Không rõ']['country'].str.split(', ').explode().value_counts().head(10)
+top_countries = df_clean[df_clean['primary_country'] != 'Unknown']['primary_country'].value_counts().head(10)
 sns.barplot(x=top_countries.values, y=top_countries.index, palette='viridis', hue=top_countries.index, legend=False)
 plt.title('Top 10 Quốc gia sản xuất nhiều nội dung nhất trên Netflix', fontsize=14, weight='bold')
 plt.xlabel('Số lượng tác phẩm', fontsize=12)
@@ -125,11 +122,12 @@ plt.close()
 # 4.5 Phân bố thời lượng phim lẻ (Movie Duration Distribution)
 plt.figure(figsize=(10, 5))
 movies_df = df_clean[df_clean['type'] == 'Movie']
-sns.histplot(movies_df['duration_num'], kde=True, bins=35, color='#e50914')
+sns.histplot(movies_df['duration_int'], kde=True, bins=35, color='#e50914')
+mean_dur = movies_df['duration_int'].mean()
 plt.title('Phân bố thời lượng phim lẻ (Phút)', fontsize=14, weight='bold')
 plt.xlabel('Thời lượng (Phút)', fontsize=12)
 plt.ylabel('Tần suất', fontsize=12)
-plt.axvline(movies_df['duration_num'].mean(), color='blue', linestyle='dashed', linewidth=2, label=f'Trung bình: {movies_df["duration_num"].mean():.1f} phút')
+plt.axvline(mean_dur, color='blue', linestyle='dashed', linewidth=2, label=f'Trung bình: {mean_dur:.1f} phút')
 plt.legend()
 plt.savefig(os.path.join(output_dir, '5_movie_duration_dist.png'), bbox_inches='tight', dpi=300)
 plt.close()
@@ -152,11 +150,11 @@ print(f"\n--- 4. ĐÃ LƯU 6 BIỂU ĐỒ VÀO THƯ MỤC: {output_dir} ---")
 print("\n--- 5. MACHINE LEARNING: XÂY DỰNG HỆ THỐNG GỢI Ý PHIM (TF-IDF & COSINE SIMILARITY) ---")
 
 # Kết hợp text: listed_in + description
-df_clean['features'] = df_clean['listed_in'] + ' ' + df_clean['description']
+df_clean['features'] = df_clean['listed_in'].fillna('') + ' ' + df_clean['description'].fillna('')
 
 # Tạo ma trận TF-IDF
 tfidf = TfidfVectorizer(stop_words='english', max_features=5000)
-tfidf_matrix = tfidf.fit_transform(df_clean['features'].fillna(''))
+tfidf_matrix = tfidf.fit_transform(df_clean['features'])
 
 # Tính ma trận độ tương đồng Cosine
 cosine_sim = cosine_similarity(tfidf_matrix, tfidf_matrix)

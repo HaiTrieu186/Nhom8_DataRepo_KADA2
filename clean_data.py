@@ -82,8 +82,14 @@ df['duration_unit'] = df['duration'].astype(str).str.extract('([a-zA-Z]+)').fill
 
 # 7. Trích xuất đặc trưng bổ sung (Feature Engineering)
 print("\n7. Tạo các cột đặc trưng mới:")
-# Quốc gia chính (quốc gia đầu tiên xuất hiện trong danh sách)
-df['primary_country'] = df['country'].apply(lambda x: x.split(',')[0].strip() if x != 'Unknown' else 'Unknown')
+# Quốc gia chính (loại bỏ dấu phẩy đầu/cuối và lấy quốc gia hợp lệ đầu tiên)
+def extract_primary_country(val):
+    if pd.isna(val) or str(val).strip() in ['', 'nan', 'Unknown']:
+        return 'Unknown'
+    countries = [c.strip() for c in str(val).split(',') if c.strip()]
+    return countries[0] if countries else 'Unknown'
+
+df['primary_country'] = df['country'].apply(extract_primary_country)
 
 # Thể loại chính (thể loại đầu tiên)
 df['primary_genre'] = df['listed_in'].apply(lambda x: x.split(',')[0].strip())
